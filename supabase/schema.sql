@@ -1,4 +1,13 @@
+-- =============================================================================
+-- Racing Simulator — full database schema (idempotent)
+-- Run this entire file in the Supabase SQL Editor (fresh or existing project).
+-- =============================================================================
+
 create extension if not exists "pgcrypto";
+
+-- -----------------------------------------------------------------------------
+-- Tables
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -101,7 +110,7 @@ create table if not exists public.analysis_summaries (
 
 create table if not exists public.leaderboard_entries (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id uuid not null,
   session_id uuid not null references public.sessions(id) on delete cascade,
   map_id uuid not null references public.maps(id) on delete cascade,
   race_mode text not null check (race_mode in ('Endurance','Time Trial','Sprint Intervals')),
@@ -123,6 +132,43 @@ create table if not exists public.preferences (
   updated_at timestamptz not null default now()
 );
 
+-- -----------------------------------------------------------------------------
+-- Upgrades (safe to re-run on existing databases)
+-- -----------------------------------------------------------------------------
+
+-- race_setups.skip_device_checks (BLE device-check flag)
+alter table public.race_setups
+  add column if not exists skip_device_checks boolean not null default false;
+
+-- maps.is_active
+alter table public.maps
+  add column if not exists is_active boolean not null default true;
+
+-- Backfill profiles for existing auth users (required before leaderboard FK)
+insert into public.profiles (user_id, display_name)
+select
+  u.id,
+  coalesce(u.raw_user_meta_data->>'display_name', split_part(u.email, '@', 1), 'Rider')
+from auth.users u
+on conflict (user_id) do nothing;
+
+-- leaderboard_entries.user_id → profiles (PostgREST join path; replaces auth.users FK)
+alter table public.leaderboard_entries
+  drop constraint if exists leaderboard_entries_user_id_fkey;
+
+delete from public.leaderboard_entries le
+where not exists (
+  select 1 from public.profiles p where p.user_id = le.user_id
+);
+
+alter table public.leaderboard_entries
+  add constraint leaderboard_entries_user_id_fkey
+  foreign key (user_id) references public.profiles(user_id) on delete cascade;
+
+-- -----------------------------------------------------------------------------
+-- Row level security
+-- -----------------------------------------------------------------------------
+
 alter table public.profiles enable row level security;
 alter table public.riders enable row level security;
 alter table public.race_setups enable row level security;
@@ -134,28 +180,57 @@ alter table public.leaderboard_entries enable row level security;
 alter table public.preferences enable row level security;
 alter table public.maps enable row level security;
 
+-- -----------------------------------------------------------------------------
+-- Policies (drop + recreate so this script is re-runnable)
+-- -----------------------------------------------------------------------------
+
+drop policy if exists "profiles_owner_rw" on public.profiles;
 create policy "profiles_owner_rw" on public.profiles
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "riders_owner_rw" on public.riders;
 create policy "riders_owner_rw" on public.riders
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "setups_owner_rw" on public.race_setups;
 create policy "setups_owner_rw" on public.race_setups
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "sessions_owner_rw" on public.sessions;
 create policy "sessions_owner_rw" on public.sessions
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "metrics_owner_rw" on public.session_metrics;
 create policy "metrics_owner_rw" on public.session_metrics
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "laps_owner_rw" on public.laps;
 create policy "laps_owner_rw" on public.laps
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "analysis_owner_rw" on public.analysis_summaries;
 create policy "analysis_owner_rw" on public.analysis_summaries
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "leaderboard_read_authenticated" on public.leaderboard_entries;
 create policy "leaderboard_read_authenticated" on public.leaderboard_entries
   for select using (auth.role() = 'authenticated');
+
+drop policy if exists "leaderboard_owner_insert" on public.leaderboard_entries;
 create policy "leaderboard_owner_insert" on public.leaderboard_entries
   for insert with check (auth.uid() = user_id);
+
+drop policy if exists "preferences_owner_rw" on public.preferences;
 create policy "preferences_owner_rw" on public.preferences
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "maps_read_public" on public.maps;
 create policy "maps_read_public" on public.maps
   for select using (true);
+
+-- -----------------------------------------------------------------------------
+-- Seed data
+-- -----------------------------------------------------------------------------
 
 insert into public.maps (name, length_km, terrain, difficulty, elevation_gain_m, default_laps)
 values
@@ -163,3 +238,9 @@ values
   ('Coastal Sprint Loop', 3.20, 'Flat / Windy', 'Medium', 90, 3),
   ('City Tempo Ring', 4.40, 'Urban Mixed', 'Low', 140, 4)
 on conflict (name) do nothing;
+
+-- -----------------------------------------------------------------------------
+-- PostgREST: reload schema cache after FK changes
+-- -----------------------------------------------------------------------------
+
+notify pgrst, 'reload schema';

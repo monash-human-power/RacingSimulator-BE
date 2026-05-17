@@ -8,6 +8,7 @@ import mapRoutes from "./routes/maps.js";
 import leaderboardRoutes from "./routes/leaderboard.js";
 import preferencesRoutes from "./routes/preferences.js";
 import raceSetupRoutes from "./routes/race-setups.js";
+import deviceRoutes from "./routes/devices.js";
 import { errorHandler } from "./lib/http.js";
 
 const app = express();
@@ -31,6 +32,7 @@ app.use("/api/maps", mapRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
 app.use("/api/preferences", preferencesRoutes);
 app.use("/api/race-setups", raceSetupRoutes);
+app.use("/api/devices", deviceRoutes);
 
 app.use(errorHandler);
 

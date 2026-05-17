@@ -1,0 +1,12 @@
+[project]
+name = "racingsimulator-engine"
+version = "0.1.0"
+description = "BLE FTMS engine service for Racing Simulator"
+requires-python = ">=3.12"
+dependencies = [
+    "bleak>=3.0.1",
+    "fastapi[standard]>=0.136.1",
+]
+
+[project.scripts]
+engine = "main:app"

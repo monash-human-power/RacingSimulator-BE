@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "concurrently -k -n api,engine -c cyan,magenta \"npm run dev:api\" \"npm run dev:engine\"",
+    "dev:api": "tsx watch src/index.ts",
+    "engine:install": "python -m pip install -r engine-service/requirements.txt",
+    "dev:engine": "cd engine-service/src && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "lint": "eslint ."
@@ -21,6 +24,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
     "@types/node": "^24.10.1",
+    "concurrently": "^9.2.1",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "tsx": "^4.20.6",

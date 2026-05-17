@@ -19,7 +19,7 @@ router.get(
     let query = supabaseAnon
       .from("leaderboard_entries")
       .select(
-        "id, user_id, session_id, map_id, race_mode, final_time_sec, efficiency, best_lap_sec, avg_power, avg_speed, avg_heart_rate, created_at, maps(name), profiles(display_name)",
+        "id, user_id, session_id, map_id, race_mode, final_time_sec, efficiency, best_lap_sec, avg_power, avg_speed, avg_heart_rate, created_at, maps(name), sessions(riders(first_name, last_name))",
       )
       .limit(limit);
 
